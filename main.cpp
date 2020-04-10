@@ -25,13 +25,16 @@
 I2C i2c(PTD9, PTD8);
 Serial pc(USBTX, USBRX);
 int m_addr = FXOS8700CQ_SLAVE_ADDR1;
-uint8_t who_am_i, sdata[2], res[6];
+uint8_t sdata[2], res[6];
 int16_t acc16;
 float t[3];
 
 DigitalOut redLED(LED1);
 InterruptIn trig(SW2);
 EventQueue queue;
+float buffer[3][101];
+int tiltbuf[101];
+int bi = 0;
 
 void FXOS8700CQ_readRegs(int addr, uint8_t *data, int len);
 void FXOS8700CQ_writeRegs(uint8_t *data, int len);
@@ -43,23 +46,26 @@ int main() {
 	redLED = 1;
 
 
-
 	// Enable the FXOS8700Q
 	FXOS8700CQ_readRegs(FXOS8700Q_CTRL_REG1, &sdata[1], 1);
 	sdata[1] |= 0x01;
 	sdata[0] = FXOS8700Q_CTRL_REG1;
 	FXOS8700CQ_writeRegs(sdata, 2);
 
-	// Get the slave address
-	FXOS8700CQ_readRegs(FXOS8700Q_WHOAMI, &who_am_i, 1);
-	pc.printf("Here is %x\r\n", who_am_i);
-
 	// Setup EventQueue
 	queue.call_every(100, logAccel);
 
 	while(true) {
-		if(!trig) queue.dispatch(9999);
-		redLED = 1;
+		if(!trig) {
+			bi = 0;
+
+			queue.dispatch(9999);
+
+			redLED = 1;
+			for(int i = 0; i < 101; i++) {
+				pc.printf("%1.4f,%1.4f,%1.4f,%d\r\n", buffer[0][i], buffer[1][i], buffer[2][i], tiltbuf[i]);
+			}
+		}
 
 		wait(0.05);
 	}
@@ -85,12 +91,20 @@ void readAccel()
 	t[2] = ((float)acc16) / 4096.0f;
 }
 
-int ii = 1;
 void logAccel() {
 	redLED = !redLED;
 	readAccel();
-	pc.printf("%d: X=%1.4f Y=%1.4f Z=%1.4f\r\n", ii, t[0], t[1], t[2]); //todo: record all data to array
-	ii++;
+	
+	for(int i = 0; i < 3; i++)
+		buffer[i][bi] = t[i];
+	
+	if(abs(t[0]) > 0.5 || abs(t[1]) > 0.5) {
+		tiltbuf[bi] = 1;
+	} else {
+		tiltbuf[bi] = 0;
+	}
+
+		bi++;
 }
 
 void FXOS8700CQ_readRegs(int addr, uint8_t *data, int len) {
